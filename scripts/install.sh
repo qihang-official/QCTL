@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="${QCTL_GITHUB_REPO:-qihang-official/QCTL}"
 VERSION_INPUT="${1:-latest}"
 INSTALL_HOME="${QCTL_HOME:-$HOME/.local/share/qctl}"
-BIN_DIR="${QCTL_BIN_DIR:-$HOME/.local/bin}"
+BIN_DIR="${QCTL_BIN_DIR:-}"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 AUTO_RUN="${QCTL_AUTO_RUN:-1}"
 RUN_CMD="${QCTL_RUN_CMD:-init}"
@@ -135,6 +135,15 @@ verify_checksum() {
   echo "warning: sha256sum/shasum not found, skip checksum verification" >&2
 }
 
+default_bin_dir() {
+  local system_bin="/usr/local/bin"
+  if mkdir -p "$system_bin" >/dev/null 2>&1 && [[ -w "$system_bin" ]]; then
+    printf '%s\n' "$system_bin"
+  else
+    printf '%s\n' "$HOME/.local/bin"
+  fi
+}
+
 pick_profile_file() {
   local shell_name
   shell_name="$(basename "${SHELL:-}")"
@@ -182,6 +191,10 @@ main() {
   require_cmd ln
   require_cmd awk
   require_cmd sed
+
+  if [[ -z "$BIN_DIR" ]]; then
+    BIN_DIR="$(default_bin_dir)"
+  fi
 
   read -r os arch <<<"$(detect_platform)"
   version="$(resolve_version "$VERSION_INPUT")"
@@ -249,9 +262,9 @@ main() {
   echo "installed: $install_path"
   echo "linked: $BIN_DIR/qctl"
   if [[ "$AUTO_RUN" == "1" ]]; then
-    if [[ -t 0 && -t 1 ]]; then
+    if [[ -t 1 && -r /dev/tty ]]; then
       echo "running: qctl ${RUN_CMD}"
-      "$BIN_DIR/qctl" ${RUN_CMD}
+      "$BIN_DIR/qctl" ${RUN_CMD} </dev/tty >/dev/tty 2>&1
     else
       echo "non-interactive shell detected, running: qctl version"
       "$BIN_DIR/qctl" version
@@ -260,13 +273,15 @@ main() {
     "$BIN_DIR/qctl" version
   fi
 
-  local profile_file
-  profile_file="$(pick_profile_file)"
-  ensure_path_in_profile "$profile_file"
+  if [[ "$BIN_DIR" == "$HOME/.local/bin" ]]; then
+    local profile_file
+    profile_file="$(pick_profile_file)"
+    ensure_path_in_profile "$profile_file"
 
-  if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-    echo "current shell PATH does not include $BIN_DIR"
-    echo "run: source \"$profile_file\""
+    if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+      echo "current shell PATH does not include $BIN_DIR"
+      echo "run: source \"$profile_file\""
+    fi
   fi
 }
 
