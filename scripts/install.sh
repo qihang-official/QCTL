@@ -135,6 +135,47 @@ verify_checksum() {
   echo "warning: sha256sum/shasum not found, skip checksum verification" >&2
 }
 
+pick_profile_file() {
+  local shell_name
+  shell_name="$(basename "${SHELL:-}")"
+
+  case "$shell_name" in
+    bash) printf '%s\n' "$HOME/.bashrc" ;;
+    zsh) printf '%s\n' "$HOME/.zshrc" ;;
+    *)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        printf '%s\n' "$HOME/.bashrc"
+      elif [[ -f "$HOME/.zshrc" ]]; then
+        printf '%s\n' "$HOME/.zshrc"
+      else
+        printf '%s\n' "$HOME/.profile"
+      fi
+      ;;
+  esac
+}
+
+ensure_path_in_profile() {
+  local profile_file="$1"
+  local marker="# qctl-bin-path"
+  local line="export PATH=\"${BIN_DIR}:\$PATH\""
+
+  mkdir -p "$(dirname "$profile_file")"
+  touch "$profile_file"
+
+  if grep -Fq "$marker" "$profile_file" || grep -Fq "$line" "$profile_file"; then
+    echo "profile already configured: $profile_file"
+    return
+  fi
+
+  {
+    echo ""
+    echo "$marker"
+    echo "$line"
+  } >> "$profile_file"
+
+  echo "updated profile: $profile_file"
+}
+
 main() {
   require_cmd curl
   require_cmd tar
@@ -219,8 +260,13 @@ main() {
     "$BIN_DIR/qctl" version
   fi
 
+  local profile_file
+  profile_file="$(pick_profile_file)"
+  ensure_path_in_profile "$profile_file"
+
   if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-    echo "hint: add this to your shell profile -> export PATH=\"$BIN_DIR:\$PATH\""
+    echo "current shell PATH does not include $BIN_DIR"
+    echo "run: source \"$profile_file\""
   fi
 }
 
